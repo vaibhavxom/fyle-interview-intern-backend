@@ -3,6 +3,7 @@ from core import db
 from core.apis import decorators
 from core.apis.responses import APIResponse
 from core.models.assignments import Assignment
+from core.models.users import  User
 
 from .schema import AssignmentSchema, AssignmentGradeSchema
 teacher_assignments_resources = Blueprint('teacher_assignments_resources', __name__)
@@ -32,3 +33,41 @@ def grade_assignment(p, incoming_payload):
     db.session.commit()
     graded_assignment_dump = AssignmentSchema().dump(graded_assignment)
     return APIResponse.respond(data=graded_assignment_dump)
+
+
+def test_grade_assignment(client, auth_headers):
+    # Create a teacher and a student
+    teacher = User(role='TEACHER')
+    db.session.add(teacher)
+    db.session.commit()
+
+    student = User(role='STUDENT')
+    db.session.add(student)
+    db.session.commit()
+
+    # Create an assignment submitted by the student
+    assignment = Assignment(
+        content="Assignment Content",
+        state="SUBMITTED",
+        student_id=student.id,
+        teacher_id=teacher.id
+    )
+    db.session.add(assignment)
+    db.session.commit()
+
+    # Grade the assignment
+    response = client.post(
+        '/teacher/assignments/grade',
+        json={'id': assignment.id, 'grade': 'A'},
+        headers=auth_headers
+    )
+
+    assert response.status_code == 200
+    data = response.json['data']
+    assert data['grade'] == 'A'
+    assert data['state'] == 'GRADED'
+
+    # Check if the assignment was updated in the database
+    assignment = Assignment.query.get(assignment.id)
+    assert assignment.grade == 'A'
+    assert assignment.state == 'GRADED'
